@@ -107,3 +107,9 @@ button:hover:not(:disabled) { background: #1d4ed8; }
   clip: rect(0,0,0,0);
   border: 0;
 }
+
+
+.status.warning {
+  background: #78350f;
+  color: #fde68a;
+}

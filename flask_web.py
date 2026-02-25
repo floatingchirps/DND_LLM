@@ -4,6 +4,7 @@ import shlex
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
@@ -13,7 +14,11 @@ ROOT = Path(__file__).resolve().parent
 
 _llm_ready = False
 _llm_boot_error = None
+_llm_boot_started_at = time.time()
 _llm_boot_lock = threading.Lock()
+
+WARMUP_TIMEOUT_S = int(os.getenv("DND_WARMUP_TIMEOUT_SECONDS", "90"))
+REQUEST_TIMEOUT_S = int(os.getenv("DND_REQUEST_TIMEOUT_SECONDS", "300"))
 
 
 def build_backend_command(prompt: str) -> list[str]:
@@ -45,7 +50,7 @@ def build_backend_command(prompt: str) -> list[str]:
     )
 
 
-def run_llm(prompt: str) -> str:
+def run_llm(prompt: str, timeout_seconds: int | None = None) -> str:
     command = build_backend_command(prompt)
     completed = subprocess.run(
         command,
@@ -53,7 +58,7 @@ def run_llm(prompt: str) -> str:
         capture_output=True,
         text=True,
         cwd=ROOT,
-        timeout=300,
+        timeout=timeout_seconds or REQUEST_TIMEOUT_S,
     )
 
     if completed.returncode != 0:
@@ -75,7 +80,7 @@ def warm_up_llm() -> None:
 
         try:
             bootstrap_prompt = os.getenv("DND_BOOTSTRAP_PROMPT", "What would you like to brainstorm about?")
-            run_llm(bootstrap_prompt)
+            run_llm(bootstrap_prompt, timeout_seconds=WARMUP_TIMEOUT_S)
             _llm_ready = True
             _llm_boot_error = None
         except Exception as exc:
@@ -83,8 +88,14 @@ def warm_up_llm() -> None:
 
 
 def start_warmup_thread() -> None:
+    global _llm_boot_started_at
+    _llm_boot_started_at = time.time()
     thread = threading.Thread(target=warm_up_llm, daemon=True)
     thread.start()
+
+
+def get_boot_elapsed_seconds() -> int:
+    return max(0, int(time.time() - _llm_boot_started_at))
 
 
 @app.get("/")
@@ -94,30 +105,51 @@ def index():
 
 @app.get("/status")
 def status():
+    elapsed = get_boot_elapsed_seconds()
+
     if _llm_ready:
-        return jsonify({"ready": True})
+        return jsonify({"ready": True, "elapsed_seconds": elapsed})
 
     if _llm_boot_error:
-        return jsonify({"ready": False, "error": _llm_boot_error}), 500
+        return jsonify({
+            "ready": False,
+            "allow_send": True,
+            "error": f"LLM warm-up failed: {_llm_boot_error}",
+            "elapsed_seconds": elapsed,
+        }), 500
 
-    return jsonify({"ready": False, "message": "LLM still booting up..."})
+    if elapsed >= WARMUP_TIMEOUT_S:
+        return jsonify({
+            "ready": False,
+            "allow_send": True,
+            "message": (
+                "LLM warm-up is taking longer than expected. "
+                "You can still try sending a prompt now."
+            ),
+            "elapsed_seconds": elapsed,
+        })
+
+    return jsonify({
+        "ready": False,
+        "allow_send": False,
+        "message": "LLM still booting up...",
+        "elapsed_seconds": elapsed,
+    })
 
 
 @app.post("/send")
 def send_prompt():
+    global _llm_ready
+
     payload = request.get_json(silent=True) or {}
     prompt = (payload.get("prompt") or "").strip()
 
     if not prompt:
         return jsonify({"error": "Prompt cannot be empty."}), 400
 
-    if not _llm_ready:
-        if _llm_boot_error:
-            return jsonify({"error": f"LLM failed to boot: {_llm_boot_error}"}), 500
-        return jsonify({"error": "LLM still booting up..."}), 503
-
     try:
         response = run_llm(prompt)
+        _llm_ready = True
         return jsonify({"response": response})
     except subprocess.TimeoutExpired:
         return jsonify({"error": "The LLM took too long to respond."}), 504
@@ -127,6 +159,7 @@ def send_prompt():
 
 if __name__ == "__main__":
     start_warmup_thread()
-    app.run(debug=True)
+    # Disable the reloader so background warm-up state isn't split across reloader parent/child processes.
+    app.run(debug=True, use_reloader=False)
 else:
     start_warmup_thread()

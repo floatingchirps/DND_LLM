@@ -59,8 +59,8 @@ Then open:
 When Flask starts, it runs a background warm-up call so the model can boot before user input is enabled.
 
 - `/status` reports readiness.
-- The frontend polls `/status` and disables chat input/button until ready.
-- If startup fails, the page shows the startup error.
+- The frontend polls `/status` and disables chat input/button during initial warm-up.
+- If warm-up takes too long or fails, the page switches to a warning state and still allows sending prompts (so you are never stuck forever).
 
 ## How backend command is chosen
 
@@ -100,4 +100,17 @@ export DND_BOOTSTRAP_PROMPT="What would you like to brainstorm about?"
 
 # Windows PowerShell
 $env:DND_BOOTSTRAP_PROMPT="What would you like to brainstorm about?"
+```
+
+
+Set custom timeout values (optional):
+
+```bash
+# Linux/macOS
+export DND_WARMUP_TIMEOUT_SECONDS=90
+export DND_REQUEST_TIMEOUT_SECONDS=300
+
+# Windows PowerShell
+$env:DND_WARMUP_TIMEOUT_SECONDS=90
+$env:DND_REQUEST_TIMEOUT_SECONDS=300
 ```

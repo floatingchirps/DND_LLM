@@ -37,17 +37,17 @@
       messages.scrollTop = messages.scrollHeight;
     }
 
-    function setReadyState(ready, text, isError = false) {
-      promptInput.disabled = !ready;
-      sendBtn.disabled = !ready;
-      promptInput.placeholder = ready
+    function setReadyState(canSend, text, stateClass = 'loading') {
+      promptInput.disabled = !canSend;
+      sendBtn.disabled = !canSend;
+      promptInput.placeholder = canSend
         ? 'Try: Give me 3 tavern plot hooks...'
         : (text || 'LLM still booting up...');
 
-      statusEl.textContent = text || (ready ? 'LLM ready. Ask your question.' : 'LLM still booting up...');
-      statusEl.className = `status ${ready ? 'ready' : (isError ? 'error' : 'loading')}`;
+      statusEl.textContent = text || (canSend ? 'LLM ready. Ask your question.' : 'LLM still booting up...');
+      statusEl.className = `status ${stateClass}`;
 
-      if (ready) {
+      if (canSend) {
         promptInput.focus();
       }
     }
@@ -58,20 +58,25 @@
         const data = await res.json();
 
         if (res.ok && data.ready) {
-          setReadyState(true, 'LLM ready. Ask your question.');
+          setReadyState(true, 'LLM ready. Ask your question.', 'ready');
+          return;
+        }
+
+        if (data.allow_send) {
+          setReadyState(true, data.message || data.error || 'Warm-up is delayed. You can still send prompts.', 'warning');
           return;
         }
 
         if (!res.ok) {
-          setReadyState(false, data.error || 'LLM failed to boot.', true);
+          setReadyState(true, data.error || 'LLM warm-up failed. You can still try sending a prompt.', 'warning');
           return;
         }
 
-        setReadyState(false, data.message || 'LLM still booting up...');
+        const elapsed = Number(data.elapsed_seconds || 0);
+        setReadyState(false, `${data.message || 'LLM still booting up...'} (${elapsed}s)`, 'loading');
         setTimeout(pollStatus, 1500);
       } catch (err) {
-        setReadyState(false, 'Could not check LLM status. Retrying...', true);
-        setTimeout(pollStatus, 2000);
+        setReadyState(true, 'Could not check LLM status. You can still try sending a prompt.', 'warning');
       }
     }
 
@@ -101,8 +106,10 @@
       try {
         const reply = await sendPrompt(prompt);
         pending.querySelector('.text').textContent = reply;
+        setReadyState(true, 'LLM ready. Ask your question.', 'ready');
       } catch (err) {
         pending.querySelector('.text').textContent = `Error: ${err.message}`;
+        setReadyState(true, 'Request failed. You can retry.', 'warning');
       }
 
       messages.scrollTop = messages.scrollHeight;
