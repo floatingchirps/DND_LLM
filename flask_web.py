@@ -29,8 +29,9 @@ def build_backend_command(prompt: str) -> list[str]:
         if platform.system().lower().startswith("win"):
             # Many .bat files include `pause` prompts ("Press any key to continue...").
             # Pipe a newline so batch scripts do not block web requests waiting for keyboard input.
-            bat_cmd = f'echo.|"{bat_file}"'
-            return ["cmd", "/c", bat_cmd]
+            # Use the local filename with cwd=ROOT to avoid fragile quoting/escaping of absolute paths.
+            bat_cmd = f"echo.|{bat_file.name}"
+            return ["cmd", "/d", "/c", bat_cmd]
         if py_file.exists():
             return [sys.executable, str(py_file), prompt]
         raise RuntimeError("RunDndBrain.bat exists, but this host is not Windows and app.py was not found.")

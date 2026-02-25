@@ -76,6 +76,8 @@ It passes the prompt to the backend via stdin (and as an argument for `app.py` m
 
 If your batch file prints `Press any key to continue...` (for example from a `pause` command), the web bridge now pipes a newline so requests do not hang waiting for keyboard input.
 
+On Windows, the bridge invokes the batch file by local name (`RunDndBrain.bat`) from the project folder, which avoids absolute-path quoting issues from packaged launch contexts.
+
 For best reliability, you should still remove `pause` from `RunDndBrain.bat` if possible.
 
 ### Optional overrides
