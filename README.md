@@ -66,6 +66,7 @@ When Flask starts, it runs a background warm-up call so the model can boot befor
 
 For each backend call, `flask_web.py` chooses this order:
 
+
 1. `DND_BACKEND_CMD` environment variable (if set)
 2. `RunDndBrain.bat` (Windows only)
 3. `app.py`
