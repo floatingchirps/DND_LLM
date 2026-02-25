@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>D&D Brainstorm Chat</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <main class="chat-app">
+    <h1>D&amp;D Brainstorm Tool</h1>
+    <p class="subtitle">Ask for quest hooks, NPC ideas, encounters, or worldbuilding details.</p>
+
+    <section id="messages" class="messages" aria-live="polite"></section>
+
+    <form id="chat-form" class="chat-form">
+      <label for="prompt" class="sr-only">Your prompt</label>
+      <input id="prompt" name="prompt" type="text" placeholder="Try: Give me 3 tavern plot hooks..." autocomplete="off" required>
+      <button type="submit">Send</button>
+    </form>
+  </main>
+
+  <script>
+    const form = document.getElementById('chat-form');
+    const promptInput = document.getElementById('prompt');
+    const messages = document.getElementById('messages');
+
+    function appendMessage(role, text) {
+      const row = document.createElement('div');
+      row.className = `message ${role}`;
+      row.innerHTML = `<div class="role">${role === 'user' ? 'You' : 'AI'}</div><div class="text"></div>`;
+      row.querySelector('.text').textContent = text;
+      messages.appendChild(row);
+
+      // Bonus: keep scroll pinned to newest message.
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    async function sendPrompt(prompt) {
+      const res = await fetch('/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unknown server error');
+      return data.response;
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const prompt = promptInput.value.trim();
+      if (!prompt) return;
+
+      appendMessage('user', prompt);
+      promptInput.value = '';
+      promptInput.focus();
+
+      appendMessage('ai', 'Thinking...');
+      const pending = messages.lastElementChild;
+
+      try {
+        const reply = await sendPrompt(prompt);
+        pending.querySelector('.text').textContent = reply;
+      } catch (err) {
+        pending.querySelector('.text').textContent = `Error: ${err.message}`;
+      }
+
+      messages.scrollTop = messages.scrollHeight;
+    });
+  </script>
+</body>
+</html>
