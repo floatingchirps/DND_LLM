@@ -66,12 +66,17 @@ When Flask starts, it runs a background warm-up call so the model can boot befor
 
 For each backend call, `flask_web.py` chooses this order:
 
-
 1. `DND_BACKEND_CMD` environment variable (if set)
 2. `RunDndBrain.bat` (Windows only)
 3. `app.py`
 
-It passes the prompt both as a CLI argument and stdin for compatibility, captures stdout, and sends it back to the UI.
+It passes the prompt to the backend via stdin (and as an argument for `app.py` mode), captures stdout, and sends it back to the UI.
+
+### Important for `RunDndBrain.bat`
+
+If your batch file prints `Press any key to continue...` (for example from a `pause` command), the web bridge now pipes a newline so requests do not hang waiting for keyboard input.
+
+For best reliability, you should still remove `pause` from `RunDndBrain.bat` if possible.
 
 ### Optional overrides
 

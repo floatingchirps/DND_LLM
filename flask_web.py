@@ -27,7 +27,10 @@ def build_backend_command(prompt: str) -> list[str]:
 
     if bat_file.exists():
         if platform.system().lower().startswith("win"):
-            return ["cmd", "/c", str(bat_file), prompt]
+            # Many .bat files include `pause` prompts ("Press any key to continue...").
+            # Pipe a newline so batch scripts do not block web requests waiting for keyboard input.
+            bat_cmd = f'echo.|"{bat_file}"'
+            return ["cmd", "/c", bat_cmd]
         if py_file.exists():
             return [sys.executable, str(py_file), prompt]
         raise RuntimeError("RunDndBrain.bat exists, but this host is not Windows and app.py was not found.")
@@ -45,7 +48,7 @@ def run_llm(prompt: str) -> str:
     command = build_backend_command(prompt)
     completed = subprocess.run(
         command,
-        input=prompt,
+        input=f"{prompt}\n",
         capture_output=True,
         text=True,
         cwd=ROOT,
