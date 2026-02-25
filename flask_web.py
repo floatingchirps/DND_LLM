@@ -3,13 +3,17 @@ import platform
 import shlex
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
-
 ROOT = Path(__file__).resolve().parent
+
+_llm_ready = False
+_llm_boot_error = None
+_llm_boot_lock = threading.Lock()
 
 
 def build_backend_command(prompt: str) -> list[str]:
@@ -24,10 +28,9 @@ def build_backend_command(prompt: str) -> list[str]:
     if bat_file.exists():
         if platform.system().lower().startswith("win"):
             return ["cmd", "/c", str(bat_file), prompt]
-        # On non-Windows machines, fall back to Python entrypoint when possible.
         if py_file.exists():
             return [sys.executable, str(py_file), prompt]
-        raise RuntimeError("RunDndBrain.bat was found, but this host is not Windows and app.py was not found.")
+        raise RuntimeError("RunDndBrain.bat exists, but this host is not Windows and app.py was not found.")
 
     if py_file.exists():
         return [sys.executable, str(py_file), prompt]
@@ -46,7 +49,7 @@ def run_llm(prompt: str) -> str:
         capture_output=True,
         text=True,
         cwd=ROOT,
-        timeout=180,
+        timeout=300,
     )
 
     if completed.returncode != 0:
@@ -57,9 +60,43 @@ def run_llm(prompt: str) -> str:
     return output or "(No response text returned by backend command.)"
 
 
+def warm_up_llm() -> None:
+    """
+    Boot the LLM once in the background so first user prompt is not blocked by startup.
+    """
+    global _llm_ready, _llm_boot_error
+    with _llm_boot_lock:
+        if _llm_ready:
+            return
+
+        try:
+            bootstrap_prompt = os.getenv("DND_BOOTSTRAP_PROMPT", "What would you like to brainstorm about?")
+            run_llm(bootstrap_prompt)
+            _llm_ready = True
+            _llm_boot_error = None
+        except Exception as exc:
+            _llm_boot_error = str(exc)
+
+
+def start_warmup_thread() -> None:
+    thread = threading.Thread(target=warm_up_llm, daemon=True)
+    thread.start()
+
+
 @app.get("/")
 def index():
     return render_template("index.html")
+
+
+@app.get("/status")
+def status():
+    if _llm_ready:
+        return jsonify({"ready": True})
+
+    if _llm_boot_error:
+        return jsonify({"ready": False, "error": _llm_boot_error}), 500
+
+    return jsonify({"ready": False, "message": "LLM still booting up..."})
 
 
 @app.post("/send")
@@ -69,6 +106,11 @@ def send_prompt():
 
     if not prompt:
         return jsonify({"error": "Prompt cannot be empty."}), 400
+
+    if not _llm_ready:
+        if _llm_boot_error:
+            return jsonify({"error": f"LLM failed to boot: {_llm_boot_error}"}), 500
+        return jsonify({"error": "LLM still booting up..."}), 503
 
     try:
         response = run_llm(prompt)
@@ -80,4 +122,7 @@ def send_prompt():
 
 
 if __name__ == "__main__":
+    start_warmup_thread()
     app.run(debug=True)
+else:
+    start_warmup_thread()

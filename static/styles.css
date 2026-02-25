@@ -20,6 +20,27 @@ body {
 h1 { margin: 0; }
 .subtitle { margin: 0; color: #d1d5db; }
 
+.status {
+  border-radius: 8px;
+  padding: .6rem .75rem;
+  font-weight: 600;
+}
+
+.status.loading {
+  background: #3f3f46;
+  color: #facc15;
+}
+
+.status.ready {
+  background: #14532d;
+  color: #bbf7d0;
+}
+
+.status.error {
+  background: #7f1d1d;
+  color: #fecaca;
+}
+
 .messages {
   min-height: 360px;
   max-height: 60vh;
@@ -56,14 +77,25 @@ input, button {
   font: inherit;
 }
 
-input { background: #111827; color: #f9fafb; }
+input {
+  background: #111827;
+  color: #f9fafb;
+}
+
+input:disabled,
+button:disabled {
+  opacity: .65;
+  cursor: not-allowed;
+}
+
 button {
   background: #2563eb;
   color: white;
   border: none;
   cursor: pointer;
 }
-button:hover { background: #1d4ed8; }
+
+button:hover:not(:disabled) { background: #1d4ed8; }
 
 .sr-only {
   position: absolute;
