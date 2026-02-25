@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>D&D Brainstorm Chat</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <main class="chat-app">
+    <h1>D&amp;D Brainstorm Tool</h1>
+    <p class="subtitle">Ask for quest hooks, NPC ideas, encounters, or worldbuilding details.</p>
+
+    <div id="status" class="status loading">LLM still booting up...</div>
+    <section id="messages" class="messages" aria-live="polite"></section>
+
+    <form id="chat-form" class="chat-form">
+      <label for="prompt" class="sr-only">Your prompt</label>
+      <input id="prompt" name="prompt" type="text" placeholder="LLM still booting up..." autocomplete="off" required disabled>
+      <button id="send-btn" type="submit" disabled>Send</button>
+    </form>
+  </main>
+
+  <script>
+    const form = document.getElementById('chat-form');
+    const promptInput = document.getElementById('prompt');
+    const sendBtn = document.getElementById('send-btn');
+    const messages = document.getElementById('messages');
+    const statusEl = document.getElementById('status');
+
+    function appendMessage(role, text) {
+      const row = document.createElement('div');
+      row.className = `message ${role}`;
+      row.innerHTML = `<div class="role">${role === 'user' ? 'You' : 'AI'}</div><div class="text"></div>`;
+      row.querySelector('.text').textContent = text;
+      messages.appendChild(row);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function setReadyState(canSend, text, stateClass = 'loading') {
+      promptInput.disabled = !canSend;
+      sendBtn.disabled = !canSend;
+      promptInput.placeholder = canSend
+        ? 'Try: Give me 3 tavern plot hooks...'
+        : (text || 'LLM still booting up...');
+
+      statusEl.textContent = text || (canSend ? 'LLM ready. Ask your question.' : 'LLM still booting up...');
+      statusEl.className = `status ${stateClass}`;
+
+      if (canSend) {
+        promptInput.focus();
+      }
+    }
+
+    async function pollStatus() {
+      try {
+        const res = await fetch('/status');
+        const data = await res.json();
+
+        if (res.ok && data.ready) {
+          setReadyState(true, 'LLM ready. Ask your question.', 'ready');
+          return;
+        }
+
+        if (data.allow_send) {
+          setReadyState(true, data.message || data.error || 'Warm-up is delayed. You can still send prompts.', 'warning');
+          return;
+        }
+
+        if (!res.ok) {
+          setReadyState(true, data.error || 'LLM warm-up failed. You can still try sending a prompt.', 'warning');
+          return;
+        }
+
+        const elapsed = Number(data.elapsed_seconds || 0);
+        setReadyState(false, `${data.message || 'LLM still booting up...'} (${elapsed}s)`, 'loading');
+        setTimeout(pollStatus, 1500);
+      } catch (err) {
+        setReadyState(true, 'Could not check LLM status. You can still try sending a prompt.', 'warning');
+      }
+    }
+
+    async function sendPrompt(prompt) {
+      const res = await fetch('/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Unknown server error');
+      return data.response;
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const prompt = promptInput.value.trim();
+      if (!prompt || promptInput.disabled) return;
+
+      appendMessage('user', prompt);
+      promptInput.value = '';
+
+      appendMessage('ai', 'Thinking...');
+      const pending = messages.lastElementChild;
+
+      try {
+        const reply = await sendPrompt(prompt);
+        pending.querySelector('.text').textContent = reply;
+        setReadyState(true, 'LLM ready. Ask your question.', 'ready');
+      } catch (err) {
+        pending.querySelector('.text').textContent = `Error: ${err.message}`;
+        setReadyState(true, 'Request failed. You can retry.', 'warning');
+      }
+
+      messages.scrollTop = messages.scrollHeight;
+    });
+
+    pollStatus();
+  </script>
+</body>
+</html>
